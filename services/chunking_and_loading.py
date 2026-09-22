@@ -21,7 +21,7 @@ def chunking_docs(folder_path:str|Path)->list[Document]:
 
     text_splitter=RecursiveCharacterTextSplitter(separators=["\n\n","\n"," ",""],
                                                  chunk_size=700,
-                                                 chunk_overlap=180
+                                                 chunk_overlap=190
                                                  )
     chunks=text_splitter.split_documents(all_documents)
 
