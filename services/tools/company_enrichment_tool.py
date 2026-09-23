@@ -1,39 +1,49 @@
-from langchain.tools import tool
-from services.retrieving import retrieving
+import os
+import requests
+from dotenv import load_dotenv
+from langchain_core.tools import tool
 
-retrieving_function=retrieving()
+load_dotenv()
 
 @tool
-def company_enrichment_tool(query:str)->str:
+def company_enrichment_tool(email_or_domain: str) -> str:
     """
-Search official CodeSense AI documentation, pricing tiers, and platform features.
-Use this tool whenever the user asks about plans, subscription costs, GitHub/GitLab integrations, or company policies.
+    Look up factual company intelligence (company name, employee count, industry, country)
+    using the client's work email address or domain name.
 
-Args:
-    query: The search keywords or user question regarding CodeSense AI.
-"""
-    response=retrieving_function.invoke(query)
-    if not response:
-        raise ValueError ("there is not realted polices")
-    formated_docs=[]
-    for i , doc in enumerate(response):
-        source=doc.metadata.get("source","Product_Catalog")
-        formated_docs.append(f"---Policy Excerpt {i+1} ({source})---\n{doc.page_content.strip()}")
+    Args:
+        email_or_domain: The prospect's email address or company website domain.
+    """
+    text = email_or_domain.lower().strip()
+    domain = text.split("@")[-1] if "@" in text else text
 
-    return "\n\n".join(formated_docs)
+    # التعامل مع الإيميلات الشخصية كحقيقة مجردة
+    free_domains = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com"]
+    if domain in free_domains:
+        return f"Domain: {domain} is a public/personal mailbox. Organization: Individual/Unknown."
 
+    api_key = os.getenv("ABSTRACT_API_KEY")
+    if not api_key:
+        return "Error: ABSTRACT_API_KEY is missing."
 
-#Test_function
-if __name__ == "__main__":
-    print("Tool Name:", company_enrichment_tool.name)
-    print("Tool Description:\n", company_enrichment_tool.description)
-    print("-" * 50)
+    url=f"https://companyenrichment.abstractapi.com/v2/?api_key={api_key}&domain={domain}"
 
-    test_query = "What is the Refund & Cancellation Policy"
-    print(f"Testing Query: '{test_query}'\n")
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code != 200:
+            return f"Failed to retrieve data for {domain} (HTTP {response.status_code})."
 
-    result = company_enrichment_tool.invoke({"query": test_query})
+        data = response.json()
+        if not data or not data.get("company_name"):
+            return f"No public corporate records found for domain: {domain}."
 
-    print("--- Tool Output ---")
-    print(result)
-    
+        return (
+            f"Company: {data.get('nacompany_nameme')}\n"
+            f"Industry: {data.get('industry', 'N/A')}\n"
+            f"Country: {data.get('country', 'N/A')}\n"
+            f"Total Employees: {data.get('employee_count', 'Unknown')}"
+            f"Description: {data.get('description', 'No description available.')}"
+        )
+
+    except requests.exceptions.RequestException as e:
+        return f"Enrichment service unreachable: {str(e)}"
